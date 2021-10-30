@@ -56,6 +56,7 @@ class STATUS(Enum):
 
 @dataclass
 class Task(AsanaObj):
+    task_id: str
     name: str
     status: CustomEnumField = None
 
@@ -106,44 +107,51 @@ def readConfig(filename):
             myprops[k] = v
     return myprops
 
-
-def main():
-
-    myprops = readConfig('config.properties')
-
-    # replace with your personal access token.
-    personal_access_token = myprops['asana.token']
-
-    # Construct an Asana client
-    client = asana.Client.access_token(personal_access_token)
-    # Set things up to send the name of this script to us to show that you succeeded! This is optional.
-    client.options['client_name'] = "tk_export_proof"
-
-    tasks = client.tasks.find_by_project(project=myprops['asana.project_id'], params={"opt_fields": "name,custom_fields"})
-
-    # A_15254-01
-
-    for t in tasks:
+def get_tasks_from_asana(project_id, splitter): 
+    tasksFromAsana = client.tasks.find_by_project(project=project_id, params={"opt_fields": "name,custom_fields"})  
+    tasks = {}
+    for t in tasksFromAsana:
         #log.debug(f" Task: {t['name']}")
-        task = Task(gid=t['gid'], name=t['name'])
+        name = t['name']
+        task_id = name.split(splitter, 1)[0]
+        task = Task(gid=t['gid'], name=name, task_id=task_id)
         status = None
         for f in t['custom_fields']:
             if f['gid'] == "1200621791199811":
                 status = STATUS.find(f['enum_value']['gid'])
         task.set_status(status)
-        #log.debug(f"{task}")
-        if "A_15254-01" in task.name:
-            #/Users/martin/tmp/upload
-            for filename in os.listdir("/Users/martin/tmp/upload"):
-                with open(os.path.join("/Users/martin/tmp/upload", filename), 'rb') as f:
-                    #to asana
-                    content = f.read()
-                    log.debug(f" {filename}, {len(content)}")
-                    r1 = client.attachments.create_on_task(task_id=task.gid, file_content=content, file_name=filename, file_content_type=None)
-                    log.debug(r1)
-                    r2 = client.tasks.update(task=task.gid, params= {"custom_fields" : { "1200621791199811" : STATUS.IN_PRUEFUNG.value.gid }})
-                    log.debug(r2)
+        tasks[task_id] = task
+    return tasks
 
+def main():
+    
+    myprops = readConfig('config.properties')
+
+    # replace with your personal access token.
+    personal_access_token = myprops['asana.token']
+    global client
+    # Construct an Asana client
+    client = asana.Client.access_token(personal_access_token)
+    # Set things up to send the name of this script to us to show that you succeeded! This is optional.
+    client.options['client_name'] = "tk_export_proof"
+
+    tasks = {
+        **get_tasks_from_asana(project_id=myprops['asana.project_id.1'], splitter=" -- "),
+        **get_tasks_from_asana(project_id=myprops['asana.project_id.2'], splitter=" - ")
+        }
+    log.debug(len(tasks))
+    
+    if "A_15254-01" in tasks:
+        task = tasks["A_15254-01"]
+        for filename in os.listdir("/Users/martin/tmp/upload"):
+            with open(os.path.join("/Users/martin/tmp/upload", filename), 'rb') as f:
+                #to asana
+                content = f.read()
+                log.debug(f" {filename}, {len(content)}")
+                #r1 = client.attachments.create_on_task(task_id=task.gid, file_content=content, file_name=filename, file_content_type=None)
+                #log.debug(r1)
+                #r2 = client.tasks.update(task=task.gid, params= {"custom_fields" : { "1200621791199811" : STATUS.IN_PRUEFUNG.value.gid }})
+                #log.debug(r2)
 
     log.info("Fertig!")
 
