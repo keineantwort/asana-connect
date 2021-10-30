@@ -13,56 +13,50 @@ import requests
 #from models import *
 
 @dataclass
-class AsanaObj:
-    gid: str
-
-
-@dataclass
-class EnumValue(AsanaObj):
+class EnumValue:
     name: str
-
-
-@dataclass
-class CustomEnumField(AsanaObj):
-    value: EnumValue
-
+    gid: str
+    gid2: str = None
 
 class STATUS(Enum):
     IN_ANPASSUNG = EnumValue(
         gid='1200621791199812',
+        gid2='1200769985237987',
         name="In Anpassung (TK)"
     )
     IM_NACHWEIS = EnumValue(
         gid='1200621791199813',
+        gid2="1200769985237988",
         name="Im Nachweis (TK)",
     )
     IN_PRUEFUNG = EnumValue(
         gid='1200621791199814',
+        gid2="1200769985237989",
         name="In Prüfung (PwC)"
     )
     EINGEFROREN = EnumValue(
         gid='1200621797503147',
+        gid2="1200769985237990",
         name="Eingefroren (PwC)"
     )
     ABGESCHLOSSEN = EnumValue(
         gid='1200621791199815',
+        gid2="1200769985237991",
         name="Abgeschlossen (TK & PwC)"
     )
     def find(gid:int):
         for it in STATUS:
-            if gid == it.value.gid:
+            if gid == it.value.gid or gid == it.value.gid2:
                 return it
         return None
 
 @dataclass
-class Task(AsanaObj):
+class Task:
+    gid: str
     task_id: str
     name: str
-    status: CustomEnumField = None
-
-    def set_status(self, status: STATUS):
-        if status:
-            self.status = CustomEnumField(gid = '1200621791199811', value = status.value)
+    status_custom_field_gid: str
+    status: STATUS = None
 
 
 # disable ssl warnings
@@ -74,15 +68,6 @@ logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:
                     level=logging.ERROR)
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
-
-"""
-GIDs Projekt gematik-AFOs
-Asana Status:
-    Custom-Field-GID: 1200621791199811
-    Values:
-        Im Nachweis: 1200621791199813
-        In Prüfung: 1200621791199814
-"""
 
 
 def getAbsolutePath(path):
@@ -107,19 +92,21 @@ def readConfig(filename):
             myprops[k] = v
     return myprops
 
-def get_tasks_from_asana(project_id, splitter): 
+def get_tasks_from_asana(project_id, custom_field_gid, splitter): 
     tasksFromAsana = client.tasks.find_by_project(project=project_id, params={"opt_fields": "name,custom_fields"})  
     tasks = {}
     for t in tasksFromAsana:
         #log.debug(f" Task: {t['name']}")
         name = t['name']
         task_id = name.split(splitter, 1)[0]
-        task = Task(gid=t['gid'], name=name, task_id=task_id)
+        task = Task(gid=t['gid'], name=name, task_id=task_id, status_custom_field_gid=custom_field_gid)
         status = None
         for f in t['custom_fields']:
-            if f['gid'] == "1200621791199811":
+            if f['gid'] == "1200621791199811" or f['gid'] == "1200769985237986":
                 status = STATUS.find(f['enum_value']['gid'])
-        task.set_status(status)
+        task.status = status
+        if not task.status:
+            log.debug(f"!! Task '{task.name}' has no state!")
         tasks[task_id] = task
     return tasks
 
@@ -136,8 +123,8 @@ def main():
     client.options['client_name'] = "tk_export_proof"
 
     tasks = {
-        **get_tasks_from_asana(project_id=myprops['asana.project_id.1'], splitter=" -- "),
-        **get_tasks_from_asana(project_id=myprops['asana.project_id.2'], splitter=" - ")
+        **get_tasks_from_asana(project_id=myprops['asana.project_id.1'], splitter=" -- ", custom_field_gid="1200621791199811"),
+        **get_tasks_from_asana(project_id=myprops['asana.project_id.2'], splitter=" - ", custom_field_gid="1200769985237986")
         }
     log.debug(len(tasks))
     
@@ -150,8 +137,9 @@ def main():
                 log.debug(f" {filename}, {len(content)}")
                 #r1 = client.attachments.create_on_task(task_id=task.gid, file_content=content, file_name=filename, file_content_type=None)
                 #log.debug(r1)
-                #r2 = client.tasks.update(task=task.gid, params= {"custom_fields" : { "1200621791199811" : STATUS.IN_PRUEFUNG.value.gid }})
-                #log.debug(r2)
+                #f.close()
+            #r2 = client.tasks.update(task=task.gid, params={"custom_fields" : { task.status_custom_field_gid : STATUS.IN_PRUEFUNG.value.gid }})
+            #log.debug(r2)
 
     log.info("Fertig!")
 
